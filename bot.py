@@ -2,8 +2,10 @@ import os
 import re
 import threading
 import discord
+from discord.ext import commands
 from discord import app_commands, Interaction, Embed
-import web  # FastAPI server
+import web  # FastAPI web server file
+from datetime import timedelta, datetime
 
 TOKEN = os.environ.get("DISCORD_TOKEN")
 LOG_CHANNEL_ID = int(os.environ.get("LOG_CHANNEL_ID", 0))
@@ -14,10 +16,14 @@ intents.message_content = True
 intents.members = True
 intents.guilds = True
 
-bot = discord.Client(intents=intents)
+class CustomBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix="!", intents=intents, application_id=os.environ.get("APPLICATION_ID"))
+
+bot = CustomBot()
 tree = bot.tree
 
-# --- Regex filters ---
+# Regex patterns
 raw_patterns = [
     r"badword1",
     r"\bforbidden\b",
@@ -25,46 +31,53 @@ raw_patterns = [
 ]
 regex_list = [re.compile(pat, re.IGNORECASE) for pat in raw_patterns]
 
-# --- Logging helper ---
-async def log_command_use(user, channel, command_name, command_type, success, args=None, error=None):
-    embed = discord.Embed(
-        title="Command Used",
-        color=discord.Color.green() if success else discord.Color.red(),
-        timestamp=discord.utils.utcnow()
-    )
-    embed.add_field(name="Command", value=command_name, inline=True)
-    embed.add_field(name="Type", value=command_type, inline=True)
-    embed.add_field(name="Used By", value=f"{user} ({user.id})", inline=False)
-    embed.add_field(name="Channel", value=f"{channel.mention} ({channel.id})", inline=False)
-    if args:
-        embed.add_field(name="Arguments", value=args, inline=False)
-    if not success and error:
-        embed.add_field(name="Error", value=error, inline=False)
+# --- Shared Help Embed ---
+def get_help_embed() -> Embed:
+    embed = Embed(title="Bot Commands Help", color=discord.Color.blurple())
+    embed.add_field(name="/echo [message] (channel)", value="Make the bot say something. Channel is optional. Requires Manage Messages.", inline=False)
+    embed.add_field(name="/help", value="Shows this help message.", inline=False)
+    return embed
 
-    embed.set_footer(text="Command Log", icon_url=user.display_avatar.url)
+# --- Logging Function ---
+async def log_command(ctx_user, name, params, success: bool, is_slash: bool, reason: str = None):
+    if not LOG_CHANNEL_ID:
+        return
+
     try:
         log_channel = await bot.fetch_channel(LOG_CHANNEL_ID)
+        embed = Embed(
+            title="Command Used",
+            color=discord.Color.green() if success else discord.Color.red(),
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="User", value=f"{ctx_user} ({ctx_user.id})", inline=False)
+        embed.add_field(name="Command", value=name, inline=True)
+        embed.add_field(name="Type", value="Slash Command" if is_slash else "Text Command", inline=True)
+        embed.add_field(name="Parameters", value=str(params), inline=False)
+        embed.add_field(name="Success", value="✅" if success else "❌", inline=True)
+        if reason:
+            embed.add_field(name="Info", value=reason, inline=False)
         await log_channel.send(embed=embed)
     except Exception as e:
-        print(f"Failed to log command: {e}")
+        print("Failed to log command usage:", e)
 
-# --- Bot Ready ---
+# --- Events ---
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
     if GUILD_ID:
         try:
-            synced = await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
-            print(f"Synced {len(synced)} commands to guild {GUILD_ID}")
+            synced = await tree.sync(guild=discord.Object(id=GUILD_ID))
+            print(f"Synced {len(synced)} command(s) to guild {GUILD_ID}")
         except Exception as e:
-            print(f"Failed to sync slash commands: {e}")
+            print(f"Failed to sync commands: {e}")
 
-# --- Regex Automod ---
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
 
+    # Check regex matches
     if not any(r.search(message.content) for r in regex_list):
         return
 
@@ -75,72 +88,73 @@ async def on_message(message: discord.Message):
     try:
         await message.reply("This word is not allowed here")
         member_notified = True
-    except:
+    except Exception:
         pass
 
     try:
         await message.delete()
         message_deleted = True
-    except:
+    except Exception:
         pass
 
     try:
         if message.guild.me.guild_permissions.moderate_members:
-            await message.author.timeout(discord.utils.utcnow() + discord.timedelta(minutes=5), reason="AutoMod")
+            await message.author.timeout(datetime.utcnow() + timedelta(minutes=5), reason="AutoMod violation")
             member_timed_out = True
-    except:
+    except Exception:
         pass
 
     embed = discord.Embed(
-        title="AutoMod Triggered",
+        title="AutoMod triggered!",
         color=discord.Color.red(),
-        timestamp=discord.utils.utcnow()
+        timestamp=datetime.utcnow()
     )
-    embed.add_field(name="Message Deleted", value="✅" if message_deleted else "❌")
-    embed.add_field(name="User Notified", value="✅" if member_notified else "❌")
-    embed.add_field(name="User Timed Out", value="✅" if member_timed_out else "❌")
-    embed.set_footer(text=str(message.author), icon_url=message.author.display_avatar.url)
+    embed.add_field(name="Message deleted?", value="✅" if message_deleted else "❌", inline=True)
+    embed.add_field(name="Member notified?", value="✅" if member_notified else "❌", inline=True)
+    embed.add_field(name="Member timed out?", value="✅" if member_timed_out else "❌", inline=True)
+    embed.set_footer(text=f"User: {message.author}", icon_url=message.author.display_avatar.url)
 
     try:
         log_channel = await bot.fetch_channel(LOG_CHANNEL_ID)
         await log_channel.send(embed=embed)
     except Exception as e:
-        print("Logging failed:", e)
+        print("Failed to log incident:", e)
 
-    await bot.process_commands(message)
-
-# --- Help Embed Generator ---
-def get_help_embed() -> Embed:
-    embed = Embed(title="Bot Commands Help", color=discord.Color.blurple())
-    embed.add_field(name="/echo [message] (channel)", value="Make the bot say something.", inline=False)
-    embed.add_field(name="/help", value="Show this help message", inline=False)
-    return embed
-
-# --- /help Command ---
-@tree.command(name="help", description="Show help", guild=discord.Object(id=GUILD_ID))
+# --- /help Slash Command ---
+@tree.command(name="help", description="Show the list of commands", guild=discord.Object(id=GUILD_ID))
 async def slash_help(interaction: Interaction):
-    await interaction.response.defer(thinking=False, ephemeral=True)
     embed = get_help_embed()
-    await interaction.followup.send(embed=embed, ephemeral=True)
-    await log_command_use(interaction.user, interaction.channel, "help", "Slash", True)
+    try:
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await log_command(interaction.user, "help", {}, True, True)
+    except Exception as e:
+        await log_command(interaction.user, "help", {}, False, True, str(e))
 
-# --- /echo Command ---
+# --- /echo Slash Command ---
 @tree.command(name="echo", description="Make the bot say something", guild=discord.Object(id=GUILD_ID))
-@app_commands.describe(message="Message to send", channel="Channel to send it in")
+@app_commands.describe(message="The message to send", channel="The channel to send it in (optional)")
 async def slash_echo(interaction: Interaction, message: str, channel: discord.TextChannel = None):
-    await interaction.response.defer(ephemeral=True)
+    params = {"message": message, "channel": str(channel) if channel else "(current channel)"}
+
     if not interaction.user.guild_permissions.manage_messages:
-        embed = Embed(title="Permission Denied", description="You need **Manage Messages**", color=discord.Color.red())
-        await interaction.followup.send(embed=embed, ephemeral=True)
-        await log_command_use(interaction.user, interaction.channel, "echo", "Slash", False, f"message={message}", "Missing Permissions")
+        embed = discord.Embed(
+            title="Permission Denied",
+            description="You need the **Manage Messages** permission to use this command.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await log_command(interaction.user, "echo", params, False, True, "Missing permission")
         return
 
-    target = channel or interaction.channel
-    await target.send(message)
-    await interaction.followup.send(f"✅ Sent in {target.mention}", ephemeral=True)
-    await log_command_use(interaction.user, interaction.channel, "echo", "Slash", True, f"message={message}, channel={target.name}")
+    try:
+        target_channel = channel or interaction.channel
+        await target_channel.send(message)
+        await interaction.response.send_message(f"✅ Sent in {target_channel.mention}", ephemeral=True)
+        await log_command(interaction.user, "echo", params, True, True)
+    except Exception as e:
+        await log_command(interaction.user, "echo", params, False, True, str(e))
 
-# --- Web + Bot Launch ---
+# --- Run Web Server and Bot ---
 def start_web():
     import uvicorn
     uvicorn.run(web.app, host="0.0.0.0", port=3000)
