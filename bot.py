@@ -328,16 +328,16 @@ async def echo_command(
     try:
         target_channel = channel or interaction.channel
         
-        # Send the message
-        await target_channel.send(message)
-        
-        # Confirm success
+        # Respond to interaction first
         embed = Embed(
             title="✅ Message Sent",
             description=f"Your message has been sent to {target_channel.mention}",
             color=discord.Color.green()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        # Then send the actual message
+        await target_channel.send(message)
         
         await CommandLogger.log_command(
             interaction.user, "echo", params, True, True
@@ -351,10 +351,11 @@ async def echo_command(
             color=discord.Color.red()
         )
         
-        try:
+        # Check if we haven't responded to the interaction yet
+        if not interaction.response.is_done():
             await interaction.response.send_message(embed=embed, ephemeral=True)
-        except:
-            pass  # Interaction might already be responded to
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=True)
             
         await CommandLogger.log_command(
             interaction.user, "echo", params, False, True, error_msg
