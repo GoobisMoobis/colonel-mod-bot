@@ -257,11 +257,15 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
     
+    # Don't process slash commands or app commands
+    if message.content.startswith('/'):
+        return
+    
     # Check for forbidden content
     if bot.has_forbidden_content(message.content):
         await AutoModerator.handle_violation(message)
     
-    # Process other commands
+    # Process prefix commands (if any)
     await bot.process_commands(message)
 
 @bot.event
