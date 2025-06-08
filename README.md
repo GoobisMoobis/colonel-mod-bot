@@ -1,6 +1,6 @@
 # colonel-mod-bot
 
-![Status](https://img.shields.io/endpoint?url=https://your-site.com/badge&label=Status)
+![Status](https://img.shields.io/endpoint?url=https://colonel-mod-bot.onrender.com/badge&label=Status)
 ![GitHub last commit (branch)](https://img.shields.io/github/last-commit/GoobisMoobis/colonel-mod-bot/main)
 ![GitHub License](https://img.shields.io/github/license/GoobisMoobis/colonel-mod-bot)
 
