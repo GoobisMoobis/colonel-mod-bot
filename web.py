@@ -12,6 +12,6 @@ def badge():
     return JSONResponse({
         "schemaVersion": 1,
         "label": "Status",
-        "message": "online",
+        "message": "Online",
         "color": "green"
     })
