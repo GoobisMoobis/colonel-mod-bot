@@ -2,6 +2,8 @@
 
 [![Status](https://img.shields.io/endpoint?url=https://colonel-mod-bot.onrender.com/badge&label=Status)](https://colonel-mod-bot.onrender.com/)
 ![GitHub last commit (branch)](https://img.shields.io/github/last-commit/GoobisMoobis/colonel-mod-bot/main)
+![GitHub License](https://img.shields.io/github/license/GoobisMoobis/colonel-mod-bot)
+
 
 ![GitHub weekly commit activity](https://img.shields.io/github/commit-activity/w/GoobisMoobis/colonel-mod-bot?label=Commits%20This%20Week)
 ![GitHub monthly commit activity](https://img.shields.io/github/commit-activity/m/GoobisMoobis/colonel-mod-bot?label=Commits%20This%20Month)
