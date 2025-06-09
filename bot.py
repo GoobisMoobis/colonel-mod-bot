@@ -352,8 +352,8 @@ def create_help_embed() -> Embed:
         inline=False
     )
     embed.add_field(
-        name="/restaurant",
-        value="Dine in a virtual restaurant with interactive experience",
+        name="/femboy-hooters",
+        value="i hate myself",
         inline=False
     )
     
@@ -507,7 +507,7 @@ async def restaurant(interaction: Interaction):
     if user_id in bot.active_restaurants:
         embed = Embed(
             title="❌ Active Session",
-            description="You already have an active restaurant session!",
+            description="You are already at femboy hooters!",
             color=discord.Color.red()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -524,7 +524,7 @@ async def restaurant(interaction: Interaction):
         view = RestaurantViewStep1(user_id)
         
         embed = Embed(
-            title="👋 Welcome to the Virtual Restaurant",
+            title="👋 Welcome to Femboy Hooters!",
             description=f"Your waiter **{view.waiter_name}** is ready to serve you!\nWould you like to be seated or request a different waiter?",
             color=discord.Color.blurple()
         )
@@ -538,7 +538,6 @@ async def restaurant(interaction: Interaction):
                     embed=embed, 
                     view=view, 
                     file=file,
-                    ephemeral=True
                 )
             except Exception as e:
                 logger.warning(f"Failed to attach waiter image: {e}")
@@ -551,11 +550,10 @@ async def restaurant(interaction: Interaction):
             await interaction.response.send_message(
                 embed=embed, 
                 view=view, 
-                ephemeral=True
             )
         
         await CommandLogger.log_command(
-            interaction.user, "restaurant", {"waiter": view.waiter_name}, True, True
+            interaction.user, "femboy-hooters", {"waiter": view.waiter_name}, True, True
         )
         
     except Exception as e:
@@ -565,7 +563,7 @@ async def restaurant(interaction: Interaction):
         
         embed = Embed(
             title="❌ Restaurant Unavailable",
-            description="Sorry, the restaurant is currently unavailable. Please try again later.",
+            description="Sorry, Femboy Hooters doesn't have any seating availible right now. Please come back again later.",
             color=discord.Color.red()
         )
         
@@ -575,7 +573,7 @@ async def restaurant(interaction: Interaction):
             await interaction.followup.send(embed=embed, ephemeral=True)
             
         await CommandLogger.log_command(
-            interaction.user, "restaurant", {}, False, True, str(e)
+            interaction.user, "femboy-hooters", {}, False, True, str(e)
         )
 
 def start_web_server():
