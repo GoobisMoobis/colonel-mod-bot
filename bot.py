@@ -370,64 +370,78 @@ class RestaurantDropdown(ui.Select):
         ]
         super().__init__(placeholder="Choose your dish...", options=options)
 
-    async def callback(self, interaction: Interaction):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("This isn't your session!", ephemeral=True)
+async def callback(self, interaction: Interaction):
+    if interaction.user.id != self.user_id:
+        return await interaction.response.send_message("This isn't your session!", ephemeral=True)
+    
+    try:
+        food = self.values[0]
+        food_emojis = {"spaghetti": "🍝", "burger": "🍔", "sushi": "🍣"}
         
-        try:
-            food = self.values[0]
-            food_emojis = {"spaghetti": "🍝", "burger": "🍔", "sushi": "🍣"}
-            
-            # Generate random wait time between 1-4 minutes (60-240 seconds)
-            wait_time = random.randint(60, 240)
-            wait_minutes = wait_time // 60
-            wait_seconds = wait_time % 60
-            
-            # Create time display string
-            if wait_minutes > 0 and wait_seconds > 0:
-                time_str = f"{wait_minutes} minute{'s' if wait_minutes != 1 else ''} and {wait_seconds} second{'s' if wait_seconds != 1 else ''}"
-            elif wait_minutes > 0:
-                time_str = f"{wait_minutes} minute{'s' if wait_minutes != 1 else ''}"
-            else:
-                time_str = f"{wait_seconds} second{'s' if wait_seconds != 1 else ''}"
-            
-            # Show preparation message
-            await interaction.response.send_message(embed=Embed(
-                title="⏳ Please wait...",
-                description=f"Your {food_emojis.get(food, '🍽️')} {food} is being prepared by our talented kitchen staff...\n\n*Estimated prep time: {time_str}*",
-                color=discord.Color.orange()
-            ))
-            
-            # Wait for random preparation time
-            await asyncio.sleep(wait_time)
-            
-            # Serve the food
-            await interaction.followup.send(embed=Embed(
-                title="✅ Enjoy your meal!",
-                description=f"Here's your delicious **{food_emojis.get(food, '🍽️')} {food}**!\n\nBon appétit! Thanks for dining at Femboy Hooters!",
-                color=discord.Color.green()
-            ))
-            
-            # Clean up active session
-            bot.active_restaurants.pop(interaction.user.id, None)
-            
-        except Exception as e:
-            logger.error(f"Error in dropdown callback: {e}")
+        # Generate random wait time between 1-4 minutes (60-240 seconds)
+        wait_time = random.randint(60, 240)
+        wait_minutes = wait_time // 60
+        wait_seconds = wait_time % 60
+        
+        # Create time display string
+        if wait_minutes > 0 and wait_seconds > 0:
+            time_str = f"{wait_minutes} minute{'s' if wait_minutes != 1 else ''} and {wait_seconds} second{'s' if wait_seconds != 1 else ''}"
+        elif wait_minutes > 0:
+            time_str = f"{wait_minutes} minute{'s' if wait_minutes != 1 else ''}"
+        else:
+            time_str = f"{wait_seconds} second{'s' if wait_seconds != 1 else ''}"
+        
+        # Show preparation message
+        await interaction.response.send_message(embed=Embed(
+            title="⏳ Please wait...",
+            description=f"Your {food_emojis.get(food, '🍽️')} {food} is being prepared by our talented kitchen staff...\n\n*Estimated prep time: {time_str}*",
+            color=discord.Color.orange()
+        ))
+        
+        # Create background task to deliver food after wait time
+        async def deliver_food():
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "❌ Sorry, there was an issue with your order. Please try again!",
-                        ephemeral=True
-                    )
-                else:
-                    await interaction.followup.send(
-                        "❌ Sorry, there was an issue with your order. Please try again!",
-                        ephemeral=True
-                    )
+                await asyncio.sleep(wait_time)
+                
+                # Create the completion embed
+                food_embed = Embed(
+                    title="✅ Enjoy your meal!",
+                    description=f"Here's your delicious **{food_emojis.get(food, '🍽️')} {food}**!\n\nBon appétit! Thanks for dining at Femboy Hooters!",
+                    color=discord.Color.green()
+                )
+                
+                # Send directly to the channel where the command was used
+                await interaction.channel.send(f"{interaction.user.mention}", embed=food_embed)
+                
+                # Clean up active session
+                bot.active_restaurants.pop(interaction.user.id, None)
+                logger.info(f"Food delivered to user {interaction.user.id} after {wait_time} seconds")
+                
+            except Exception as e:
+                logger.error(f"Error delivering food to user {interaction.user.id}: {e}")
                 # Clean up active session on error
-                bot.active_restaurants.pop(self.user_id, None)
-            except Exception as cleanup_error:
-                logger.error(f"Error during dropdown cleanup: {cleanup_error}")
+                bot.active_restaurants.pop(interaction.user.id, None)
+        
+        # Start the background task
+        bot.loop.create_task(deliver_food())
+        
+    except Exception as e:
+        logger.error(f"Error in dropdown callback: {e}")
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Sorry, there was an issue with your order. Please try again!",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "❌ Sorry, there was an issue with your order. Please try again!",
+                    ephemeral=True
+                )
+            # Clean up active session on error
+            bot.active_restaurants.pop(self.user_id, None)
+        except Exception as cleanup_error:
+            logger.error(f"Error during dropdown cleanup: {cleanup_error}")
 
 def create_help_embed() -> Embed:
     """Create the help command embed."""
