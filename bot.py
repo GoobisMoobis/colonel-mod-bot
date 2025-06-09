@@ -5,9 +5,10 @@ import logging
 from typing import Optional, List
 import discord
 from discord.ext import commands
-from discord import app_commands, Interaction, Embed
+from discord import app_commands, Interaction, Embed, ui
 import web  # FastAPI web server file
 from datetime import timedelta, datetime
+import random
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,6 +39,7 @@ class ModeratedBot(commands.Bot):
             application_id=APPLICATION_ID
         )
         self.setup_automod_patterns()
+        self.active_restaurants = {}
         
     def setup_automod_patterns(self):
         """Initialize regex patterns for automod."""
@@ -208,6 +210,70 @@ class AutoModerator:
         except Exception as e:
             logger.error(f"Failed to log automod incident: {e}")
 
+# --- Restaurant Command UI Classes ---
+class RestaurantViewStep1(ui.View):
+    def __init__(self, user_id: int):
+        super().__init__(timeout=60)
+        self.user_id = user_id
+
+    @ui.button(label="Waiter 1", style=discord.ButtonStyle.primary)
+    async def waiter1(self, interaction: Interaction, button: ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This isn't your session!", ephemeral=True)
+        await self.next_step(interaction, "Waiter 1")
+
+    @ui.button(label="Waiter 2", style=discord.ButtonStyle.primary)
+    async def waiter2(self, interaction: Interaction, button: ui.Button):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This isn't your session!", ephemeral=True)
+        await self.next_step(interaction, "Waiter 2")
+
+    async def next_step(self, interaction: Interaction, waiter_name: str):
+        await interaction.response.edit_message(embed=Embed(
+            title="🍽️ You've been seated!",
+            description=f"Your waiter **{waiter_name}** has seated you at a table.",
+            color=discord.Color.green()
+        ), view=None)
+        view = RestaurantViewStep2(self.user_id)
+        await interaction.followup.send(embed=Embed(
+            title="📜 Menu",
+            description="Please select a dish:",
+            color=discord.Color.blurple()
+        ), view=view, ephemeral=True)
+
+class RestaurantViewStep2(ui.View):
+    def __init__(self, user_id: int):
+        super().__init__(timeout=60)
+        self.user_id = user_id
+        self.add_item(RestaurantDropdown(user_id))
+
+class RestaurantDropdown(ui.Select):
+    def __init__(self, user_id: int):
+        self.user_id = user_id
+        options = [
+            discord.SelectOption(label="Spaghetti", value="spaghetti"),
+            discord.SelectOption(label="Burger", value="burger"),
+            discord.SelectOption(label="Sushi", value="sushi")
+        ]
+        super().__init__(placeholder="Choose your dish...", options=options)
+
+    async def callback(self, interaction: Interaction):
+        if interaction.user.id != self.user_id:
+            return await interaction.response.send_message("This isn't your session!", ephemeral=True)
+        food = self.values[0]
+        await interaction.response.send_message(embed=Embed(
+            title="⏳ Please wait...",
+            description=f"Your {food} is being prepared...",
+            color=discord.Color.orange()
+        ), ephemeral=True)
+        await discord.utils.sleep_until(datetime.utcnow() + timedelta(seconds=5))
+        await interaction.followup.send(embed=Embed(
+            title="✅ Enjoy your meal!",
+            description=f"You have been served **{food}**. Bon appétit!",
+            color=discord.Color.green()
+        ), ephemeral=True)
+        bot.active_restaurants.pop(interaction.user.id, None)
+
 def create_help_embed() -> Embed:
     """Create the help command embed."""
     embed = Embed(
@@ -224,6 +290,11 @@ def create_help_embed() -> Embed:
     embed.add_field(
         name="/help",
         value="Display this help message",
+        inline=False
+    )
+    embed.add_field(
+        name="/restaurant",
+        value="Dine in a virtual restaurant with interactive experience",
         inline=False
     )
     
@@ -328,8 +399,6 @@ async def echo_command(
         )
         return
     
-
-    
     try:
         target_channel = channel or interaction.channel
         
@@ -364,6 +433,67 @@ async def echo_command(
             
         await CommandLogger.log_command(
             interaction.user, "echo", params, False, True, error_msg
+        )
+
+@bot.tree.command(
+    name="restaurant", 
+    description="Dine in a virtual restaurant",
+    guild=discord.Object(id=GUILD_ID) if GUILD_ID else None
+)
+async def restaurant(interaction: Interaction):
+    """Interactive restaurant experience command."""
+    user_id = interaction.user.id
+    
+    # Check if user already has an active restaurant session
+    if user_id in bot.active_restaurants:
+        embed = Embed(
+            title="❌ Active Session",
+            description="You already have an active restaurant session!",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await CommandLogger.log_command(
+            interaction.user, "restaurant", {}, False, True, "Active session exists"
+        )
+        return
+
+    try:
+        # Mark user as having an active session
+        bot.active_restaurants[user_id] = True
+        
+        embed = Embed(
+            title="👋 Welcome to the Virtual Restaurant",
+            description="Please choose a waiter to begin:",
+            color=discord.Color.blurple()
+        )
+        await interaction.response.send_message(
+            embed=embed, 
+            view=RestaurantViewStep1(user_id), 
+            ephemeral=True
+        )
+        
+        await CommandLogger.log_command(
+            interaction.user, "restaurant", {}, True, True
+        )
+        
+    except Exception as e:
+        logger.error(f"Restaurant command failed: {e}")
+        # Clean up active session on error
+        bot.active_restaurants.pop(user_id, None)
+        
+        embed = Embed(
+            title="❌ Restaurant Unavailable",
+            description="Sorry, the restaurant is currently unavailable. Please try again later.",
+            color=discord.Color.red()
+        )
+        
+        if not interaction.response.is_done():
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+        await CommandLogger.log_command(
+            interaction.user, "restaurant", {}, False, True, str(e)
         )
 
 def start_web_server():
