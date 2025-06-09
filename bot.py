@@ -2,6 +2,7 @@ import os
 import re
 import threading
 import logging
+import asyncio
 from typing import Optional, List
 import discord
 from discord.ext import commands
