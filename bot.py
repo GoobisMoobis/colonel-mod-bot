@@ -2,7 +2,7 @@ import os
 import re
 import threading
 import logging
-import asyncio
+import asyncio  # Add this import
 from typing import Optional, List
 import discord
 from discord.ext import commands
@@ -378,15 +378,28 @@ class RestaurantDropdown(ui.Select):
             food = self.values[0]
             food_emojis = {"spaghetti": "🍝", "burger": "🍔", "sushi": "🍣"}
             
+            # Generate random wait time between 1-4 minutes (60-240 seconds)
+            wait_time = random.randint(60, 240)
+            wait_minutes = wait_time // 60
+            wait_seconds = wait_time % 60
+            
+            # Create time display string
+            if wait_minutes > 0 and wait_seconds > 0:
+                time_str = f"{wait_minutes} minute{'s' if wait_minutes != 1 else ''} and {wait_seconds} second{'s' if wait_seconds != 1 else ''}"
+            elif wait_minutes > 0:
+                time_str = f"{wait_minutes} minute{'s' if wait_minutes != 1 else ''}"
+            else:
+                time_str = f"{wait_seconds} second{'s' if wait_seconds != 1 else ''}"
+            
             # Show preparation message
             await interaction.response.send_message(embed=Embed(
                 title="⏳ Please wait...",
-                description=f"Your {food_emojis.get(food, '🍽️')} {food} is being prepared by our talented kitchen staff...",
+                description=f"Your {food_emojis.get(food, '🍽️')} {food} is being prepared by our talented kitchen staff...\n\n*Estimated prep time: {time_str}*",
                 color=discord.Color.orange()
             ))
             
-            # Wait for "preparation time"
-            await asyncio.sleep(5)
+            # Wait for random preparation time
+            await asyncio.sleep(wait_time)
             
             # Serve the food
             await interaction.followup.send(embed=Embed(
