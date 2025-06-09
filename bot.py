@@ -237,7 +237,7 @@ class AutoModerator:
 # --- Restaurant Command UI Classes ---
 class RestaurantViewStep1(ui.View):
     def __init__(self, user_id: int):
-        super().__init__(timeout=60)
+        super().__init__(timeout=300)  # Increased timeout to 5 minutes
         self.user_id = user_id
         self.waiter_name, self.waiter_image = bot.get_random_waiter()
 
@@ -257,7 +257,7 @@ class RestaurantViewStep1(ui.View):
         
         # Update the embed with new waiter info
         embed = Embed(
-            title="👋 Welcome to the Virtual Restaurant",
+            title="👋 Welcome to Femboy Hooters!",
             description=f"Your waiter **{self.waiter_name}** is ready to serve you!\nWould you like to be seated or request a different waiter?",
             color=discord.Color.blurple()
         )
@@ -275,63 +275,145 @@ class RestaurantViewStep1(ui.View):
             await interaction.response.edit_message(embed=embed, view=self)
 
     async def next_step(self, interaction: Interaction):
-        embed = Embed(
-            title="🍽️ You've been seated!",
-            description=f"Your waiter **{self.waiter_name}** has seated you at a table.",
-            color=discord.Color.green()
-        )
-        
-        # Add waiter image if available
-        if self.waiter_image:
+        try:
+            # Create the menu embed and view immediately
+            menu_embed = Embed(
+                title="📜 Menu - You've been seated!",
+                description=f"Your waiter **{self.waiter_name}** has seated you at a table.\nPlease select a dish from our delicious options:",
+                color=discord.Color.green()
+            )
+            menu_embed.add_field(
+                name="Available Dishes",
+                value="🍝 Spaghetti - Classic Italian pasta\n🍔 Burger - Juicy beef burger\n🍣 Sushi - Fresh Japanese sushi",
+                inline=False
+            )
+            
+            # Add waiter image if available
+            if self.waiter_image:
+                try:
+                    file = discord.File(self.waiter_image, filename="waiter.png")
+                    menu_embed.set_thumbnail(url="attachment://waiter.png")
+                except Exception as e:
+                    logger.warning(f"Failed to prepare waiter image: {e}")
+                    file = None
+            else:
+                file = None
+            
+            # Create the menu view
+            view = RestaurantViewStep2(self.user_id)
+            
+            # Update the message with the menu and dropdown in one go
+            if file:
+                await interaction.response.edit_message(embed=menu_embed, view=view, attachments=[file])
+            else:
+                await interaction.response.edit_message(embed=menu_embed, view=view)
+            
+        except Exception as e:
+            logger.error(f"Error in next_step: {e}")
+            # Fallback error handling
             try:
-                file = discord.File(self.waiter_image, filename="waiter.png")
-                embed.set_thumbnail(url="attachment://waiter.png")
-                await interaction.response.edit_message(embed=embed, view=None, attachments=[file])
-            except Exception as e:
-                logger.warning(f"Failed to attach waiter image: {e}")
-                await interaction.response.edit_message(embed=embed, view=None)
-        else:
-            await interaction.response.edit_message(embed=embed, view=None)
-        
-        view = RestaurantViewStep2(self.user_id)
-        await interaction.followup.send(embed=Embed(
-            title="📜 Menu",
-            description="Please select a dish:",
-            color=discord.Color.blurple()
-        ), view=view, ephemeral=True)
+                error_embed = Embed(
+                    title="❌ Service Error",
+                    description="Something went wrong while seating you. Please try the command again!",
+                    color=discord.Color.red()
+                )
+                
+                if not interaction.response.is_done():
+                    await interaction.response.edit_message(embed=error_embed, view=None)
+                else:
+                    # This shouldn't happen, but just in case
+                    await interaction.followup.edit_message(interaction.message.id, embed=error_embed, view=None)
+                
+                # Clean up active session on error
+                bot.active_restaurants.pop(self.user_id, None)
+            except Exception as cleanup_error:
+                logger.error(f"Error during cleanup: {cleanup_error}")
 
 class RestaurantViewStep2(ui.View):
     def __init__(self, user_id: int):
-        super().__init__(timeout=60)
+        super().__init__(timeout=300)  # Increased timeout to 5 minutes
         self.user_id = user_id
         self.add_item(RestaurantDropdown(user_id))
+    
+    async def on_timeout(self):
+        """Handle view timeout"""
+        try:
+            # Clean up active session when view times out
+            bot.active_restaurants.pop(self.user_id, None)
+            logger.info(f"Restaurant session timed out for user {self.user_id}")
+        except Exception as e:
+            logger.error(f"Error handling timeout: {e}")
 
 class RestaurantDropdown(ui.Select):
     def __init__(self, user_id: int):
         self.user_id = user_id
         options = [
-            discord.SelectOption(label="Spaghetti", value="spaghetti"),
-            discord.SelectOption(label="Burger", value="burger"),
-            discord.SelectOption(label="Sushi", value="sushi")
+            discord.SelectOption(
+                label="Spaghetti", 
+                value="spaghetti", 
+                emoji="🍝",
+                description="Classic Italian pasta with marinara sauce"
+            ),
+            discord.SelectOption(
+                label="Burger", 
+                value="burger", 
+                emoji="🍔",
+                description="Juicy beef burger with all the fixings"
+            ),
+            discord.SelectOption(
+                label="Sushi", 
+                value="sushi", 
+                emoji="🍣",
+                description="Fresh Japanese sushi rolls"
+            )
         ]
         super().__init__(placeholder="Choose your dish...", options=options)
 
     async def callback(self, interaction: Interaction):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("This isn't your session!", ephemeral=True)
-        food = self.values[0]
-        await interaction.response.send_message(embed=Embed(
-            title="⏳ Please wait...",
-            description=f"Your {food} is being prepared...",
-            color=discord.Color.orange()
-        ), ephemeral=True)
-        await discord.utils.sleep_until(datetime.utcnow() + timedelta(seconds=5))
-        await interaction.followup.send(embed=Embed(
-            title="✅ Enjoy your meal!",
-            description=f"You have been served **{food}**. Bon appétit!",
-            color=discord.Color.green()
-        ), ephemeral=True)
-        bot.active_restaurants.pop(interaction.user.id, None)
+        
+        try:
+            food = self.values[0]
+            food_emojis = {"spaghetti": "🍝", "burger": "🍔", "sushi": "🍣"}
+            
+            # Show preparation message
+            await interaction.response.send_message(embed=Embed(
+                title="⏳ Please wait...",
+                description=f"Your {food_emojis.get(food, '🍽️')} {food} is being prepared by our talented kitchen staff...",
+                color=discord.Color.orange()
+            ))
+            
+            # Wait for "preparation time"
+            await asyncio.sleep(5)
+            
+            # Serve the food
+            await interaction.followup.send(embed=Embed(
+                title="✅ Enjoy your meal!",
+                description=f"Here's your delicious **{food_emojis.get(food, '🍽️')} {food}**!\n\nBon appétit! Thanks for dining at Femboy Hooters!",
+                color=discord.Color.green()
+            ))
+            
+            # Clean up active session
+            bot.active_restaurants.pop(interaction.user.id, None)
+            
+        except Exception as e:
+            logger.error(f"Error in dropdown callback: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "❌ Sorry, there was an issue with your order. Please try again!",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "❌ Sorry, there was an issue with your order. Please try again!",
+                        ephemeral=True
+                    )
+                # Clean up active session on error
+                bot.active_restaurants.pop(self.user_id, None)
+            except Exception as cleanup_error:
+                logger.error(f"Error during dropdown cleanup: {cleanup_error}")
 
 def create_help_embed() -> Embed:
     """Create the help command embed."""
@@ -495,8 +577,8 @@ async def echo_command(
         )
 
 @bot.tree.command(
-    name="restaurant", 
-    description="Dine in a virtual restaurant",
+    name="femboy-hooters", 
+    description="I hate myself",
     guild=discord.Object(id=GUILD_ID) if GUILD_ID else None
 )
 async def restaurant(interaction: Interaction):
@@ -512,7 +594,7 @@ async def restaurant(interaction: Interaction):
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         await CommandLogger.log_command(
-            interaction.user, "restaurant", {}, False, True, "Active session exists"
+            interaction.user, "femboy-hooters", {}, False, True, "Active session exists"
         )
         return
 
@@ -557,7 +639,7 @@ async def restaurant(interaction: Interaction):
         )
         
     except Exception as e:
-        logger.error(f"Restaurant command failed: {e}")
+        logger.error(f"Femboy-hooters command failed: {e}")
         # Clean up active session on error
         bot.active_restaurants.pop(user_id, None)
         
