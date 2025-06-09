@@ -407,6 +407,7 @@ class RestaurantDropdown(ui.Select):
                 bot.active_restaurants.pop(self.user_id, None)
             except Exception as cleanup_error:
                 logger.error(f"Error during dropdown cleanup: {cleanup_error}")
+
 def create_help_embed() -> Embed:
     """Create the help command embed."""
     embed = Embed(
@@ -423,11 +424,6 @@ def create_help_embed() -> Embed:
     embed.add_field(
         name="/help",
         value="Display this help message",
-        inline=False
-    )
-    embed.add_field(
-        name="/femboy-hooters",
-        value="i hate myself",
         inline=False
     )
     
@@ -560,10 +556,16 @@ async def echo_command(
 @bot.tree.command(
     name="femboy-hooters", 
     description="I hate myself",
-    guild=discord.Object(id=GUILD_ID) if GUILD_ID else None
+    guild=None  # This makes it only available in DMs
 )
 async def restaurant(interaction: Interaction):
     """Interactive restaurant experience command."""
+    if interaction.guild is not None:
+        return await interaction.response.send_message(
+            "This command can only be used in DMs with the bot.",
+            ephemeral=True
+        )
+    
     user_id = interaction.user.id
     
     if user_id in bot.active_restaurants:
@@ -572,11 +574,7 @@ async def restaurant(interaction: Interaction):
             description="You are already at femboy hooters!",
             color=discord.Color.red()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        await CommandLogger.log_command(
-            interaction.user, "femboy-hooters", {}, False, True, "Active session exists"
-        )
-        return
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
 
     try:
         bot.active_restaurants[user_id] = True
@@ -595,24 +593,19 @@ async def restaurant(interaction: Interaction):
                 await interaction.response.send_message(
                     embed=embed, 
                     view=view, 
-                    file=file,
+                    file=file
                 )
             except Exception as e:
                 logger.warning(f"Failed to attach waiter image: {e}")
                 await interaction.response.send_message(
                     embed=embed, 
-                    view=view, 
-                    ephemeral=True
+                    view=view
                 )
         else:
             await interaction.response.send_message(
                 embed=embed, 
-                view=view, 
+                view=view
             )
-        
-        await CommandLogger.log_command(
-            interaction.user, "femboy-hooters", {"waiter": view.waiter_name}, True, True
-        )
         
     except Exception as e:
         logger.error(f"Femboy-hooters command failed: {e}")
@@ -620,18 +613,14 @@ async def restaurant(interaction: Interaction):
         
         embed = Embed(
             title="❌ Restaurant Unavailable",
-            description="Sorry, Femboy Hooters doesn't have any seating availible right now. Please come back again later.",
+            description="Sorry, Femboy Hooters doesn't have any seating available right now. Please come back again later.",
             color=discord.Color.red()
         )
         
         if not interaction.response.is_done():
-            await interaction.response.send_message(embed=embed, ephemeral=True)
+            await interaction.response.send_message(embed=embed)
         else:
-            await interaction.followup.send(embed=embed, ephemeral=True)
-            
-        await CommandLogger.log_command(
-            interaction.user, "femboy-hooters", {}, False, True, str(e)
-        )
+            await interaction.followup.send(embed=embed)
 
 def start_web_server():
     """Start the web server in a separate thread."""
