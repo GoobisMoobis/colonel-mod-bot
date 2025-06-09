@@ -9,6 +9,7 @@ from discord import app_commands, Interaction, Embed, ui
 import web  # FastAPI web server file
 from datetime import timedelta, datetime
 import random
+import glob
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -57,6 +58,29 @@ class ModeratedBot(commands.Bot):
     def has_forbidden_content(self, text: str) -> bool:
         """Check if text contains forbidden content."""
         return any(pattern.search(text) for pattern in self.regex_patterns)
+    
+    def get_random_waiter(self) -> tuple[str, str]:
+        """Get a random waiter name and image path from assets/waiters folder."""
+        try:
+            # Get all image files from assets/waiters directory
+            waiter_files = glob.glob("./assets/waiters/*")
+            waiter_files = [f for f in waiter_files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))]
+            
+            if not waiter_files:
+                # Fallback if no waiter images found
+                return "Generic Waiter", None
+            
+            # Select random waiter file
+            selected_file = random.choice(waiter_files)
+            
+            # Extract waiter name from filename (without extension)
+            waiter_name = os.path.splitext(os.path.basename(selected_file))[0]
+            
+            return waiter_name, selected_file
+            
+        except Exception as e:
+            logger.warning(f"Failed to get random waiter: {e}")
+            return "Generic Waiter", None
 
 bot = ModeratedBot()
 
@@ -215,25 +239,60 @@ class RestaurantViewStep1(ui.View):
     def __init__(self, user_id: int):
         super().__init__(timeout=60)
         self.user_id = user_id
+        self.waiter_name, self.waiter_image = bot.get_random_waiter()
 
-    @ui.button(label="Waiter 1", style=discord.ButtonStyle.primary)
-    async def waiter1(self, interaction: Interaction, button: ui.Button):
+    @ui.button(label="Get Seated", style=discord.ButtonStyle.primary, emoji="🪑")
+    async def get_seated(self, interaction: Interaction, button: ui.Button):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("This isn't your session!", ephemeral=True)
-        await self.next_step(interaction, "Waiter 1")
+        await self.next_step(interaction)
 
-    @ui.button(label="Waiter 2", style=discord.ButtonStyle.primary)
-    async def waiter2(self, interaction: Interaction, button: ui.Button):
+    @ui.button(label="Request Different Waiter", style=discord.ButtonStyle.secondary, emoji="🔄")
+    async def request_different_waiter(self, interaction: Interaction, button: ui.Button):
         if interaction.user.id != self.user_id:
             return await interaction.response.send_message("This isn't your session!", ephemeral=True)
-        await self.next_step(interaction, "Waiter 2")
+        
+        # Get a new random waiter
+        self.waiter_name, self.waiter_image = bot.get_random_waiter()
+        
+        # Update the embed with new waiter info
+        embed = Embed(
+            title="👋 Welcome to the Virtual Restaurant",
+            description=f"Your waiter **{self.waiter_name}** is ready to serve you!\nWould you like to be seated or request a different waiter?",
+            color=discord.Color.blurple()
+        )
+        
+        # Add waiter image if available
+        if self.waiter_image:
+            try:
+                file = discord.File(self.waiter_image, filename="waiter.png")
+                embed.set_thumbnail(url="attachment://waiter.png")
+                await interaction.response.edit_message(embed=embed, view=self, attachments=[file])
+            except Exception as e:
+                logger.warning(f"Failed to attach waiter image: {e}")
+                await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.edit_message(embed=embed, view=self)
 
-    async def next_step(self, interaction: Interaction, waiter_name: str):
-        await interaction.response.edit_message(embed=Embed(
+    async def next_step(self, interaction: Interaction):
+        embed = Embed(
             title="🍽️ You've been seated!",
-            description=f"Your waiter **{waiter_name}** has seated you at a table.",
+            description=f"Your waiter **{self.waiter_name}** has seated you at a table.",
             color=discord.Color.green()
-        ), view=None)
+        )
+        
+        # Add waiter image if available
+        if self.waiter_image:
+            try:
+                file = discord.File(self.waiter_image, filename="waiter.png")
+                embed.set_thumbnail(url="attachment://waiter.png")
+                await interaction.response.edit_message(embed=embed, view=None, attachments=[file])
+            except Exception as e:
+                logger.warning(f"Failed to attach waiter image: {e}")
+                await interaction.response.edit_message(embed=embed, view=None)
+        else:
+            await interaction.response.edit_message(embed=embed, view=None)
+        
         view = RestaurantViewStep2(self.user_id)
         await interaction.followup.send(embed=Embed(
             title="📜 Menu",
@@ -461,19 +520,42 @@ async def restaurant(interaction: Interaction):
         # Mark user as having an active session
         bot.active_restaurants[user_id] = True
         
+        # Get initial random waiter
+        view = RestaurantViewStep1(user_id)
+        
         embed = Embed(
             title="👋 Welcome to the Virtual Restaurant",
-            description="Please choose a waiter to begin:",
+            description=f"Your waiter **{view.waiter_name}** is ready to serve you!\nWould you like to be seated or request a different waiter?",
             color=discord.Color.blurple()
         )
-        await interaction.response.send_message(
-            embed=embed, 
-            view=RestaurantViewStep1(user_id), 
-            ephemeral=True
-        )
+        
+        # Add waiter image if available
+        if view.waiter_image:
+            try:
+                file = discord.File(view.waiter_image, filename="waiter.png")
+                embed.set_thumbnail(url="attachment://waiter.png")
+                await interaction.response.send_message(
+                    embed=embed, 
+                    view=view, 
+                    file=file,
+                    ephemeral=True
+                )
+            except Exception as e:
+                logger.warning(f"Failed to attach waiter image: {e}")
+                await interaction.response.send_message(
+                    embed=embed, 
+                    view=view, 
+                    ephemeral=True
+                )
+        else:
+            await interaction.response.send_message(
+                embed=embed, 
+                view=view, 
+                ephemeral=True
+            )
         
         await CommandLogger.log_command(
-            interaction.user, "restaurant", {}, True, True
+            interaction.user, "restaurant", {"waiter": view.waiter_name}, True, True
         )
         
     except Exception as e:
