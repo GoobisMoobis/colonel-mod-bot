@@ -2,15 +2,12 @@ import os
 import re
 import threading
 import logging
-import asyncio
 from typing import Optional, List
 import discord
 from discord.ext import commands
-from discord import app_commands, Interaction, Embed, ui
-import web
+from discord import app_commands, Interaction, Embed
+import web  # FastAPI web server file
 from datetime import timedelta, datetime
-import random
-import glob
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -41,7 +38,6 @@ class ModeratedBot(commands.Bot):
             application_id=APPLICATION_ID
         )
         self.setup_automod_patterns()
-        self.active_restaurants = {}
         
     def setup_automod_patterns(self):
         """Initialize regex patterns for automod."""
@@ -59,23 +55,6 @@ class ModeratedBot(commands.Bot):
     def has_forbidden_content(self, text: str) -> bool:
         """Check if text contains forbidden content."""
         return any(pattern.search(text) for pattern in self.regex_patterns)
-    
-    def get_random_waiter(self) -> tuple[str, str]:
-        """Get a random waiter name and image path from assets/waiters folder."""
-        try:
-            waiter_files = glob.glob("./assets/waiters/*")
-            waiter_files = [f for f in waiter_files if f.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))]
-            
-            if not waiter_files:
-                return "Generic Waiter", None
-            
-            selected_file = random.choice(waiter_files)
-            waiter_name = os.path.splitext(os.path.basename(selected_file))[0]
-            return waiter_name, selected_file
-            
-        except Exception as e:
-            logger.warning(f"Failed to get random waiter: {e}")
-            return "Generic Waiter", None
 
 bot = ModeratedBot()
 
@@ -145,6 +124,7 @@ class AutoModerator:
             "user_timed_out": False
         }
         
+        # Try to notify user
         try:
             await message.reply(
                 "⚠️ Your message contains prohibited content and has been removed.",
@@ -154,12 +134,14 @@ class AutoModerator:
         except discord.HTTPException as e:
             logger.warning(f"Failed to notify user: {e}")
         
+        # Try to delete message
         try:
             await message.delete()
             actions_taken["message_deleted"] = True
         except discord.HTTPException as e:
             logger.warning(f"Failed to delete message: {e}")
         
+        # Try to timeout user (if bot has permissions)
         try:
             if (message.guild and 
                 message.guild.me.guild_permissions.moderate_members and
@@ -175,6 +157,7 @@ class AutoModerator:
         except discord.HTTPException as e:
             logger.warning(f"Failed to timeout user: {e}")
         
+        # Log the incident
         await AutoModerator.log_incident(message, actions_taken)
     
     @staticmethod
@@ -207,6 +190,7 @@ class AutoModerator:
                 inline=False
             )
             
+            # Add action results
             for action, success in actions.items():
                 embed.add_field(
                     name=action.replace("_", " ").title(),
@@ -223,190 +207,6 @@ class AutoModerator:
             
         except Exception as e:
             logger.error(f"Failed to log automod incident: {e}")
-
-class RestaurantViewStep1(ui.View):
-    def __init__(self, user_id: int):
-        super().__init__(timeout=300)
-        self.user_id = user_id
-        self.waiter_name, self.waiter_image = bot.get_random_waiter()
-
-    @ui.button(label="Get Seated", style=discord.ButtonStyle.primary, emoji="🪑")
-    async def get_seated(self, interaction: Interaction, button: ui.Button):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("This isn't your session!", ephemeral=True)
-        await self.next_step(interaction)
-
-    @ui.button(label="Request Different Waiter", style=discord.ButtonStyle.secondary, emoji="🔄")
-    async def request_different_waiter(self, interaction: Interaction, button: ui.Button):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("This isn't your session!", ephemeral=True)
-        
-        self.waiter_name, self.waiter_image = bot.get_random_waiter()
-        
-        embed = Embed(
-            title="👋 Welcome to Femboy Hooters!",
-            description=f"Your waiter **{self.waiter_name}** is ready to serve you!\nWould you like to be seated or request a different waiter?",
-            color=discord.Color.blurple()
-        )
-        
-        if self.waiter_image:
-            try:
-                file = discord.File(self.waiter_image, filename="waiter.png")
-                embed.set_thumbnail(url="attachment://waiter.png")
-                await interaction.response.edit_message(embed=embed, view=self, attachments=[file])
-            except Exception as e:
-                logger.warning(f"Failed to attach waiter image: {e}")
-                await interaction.response.edit_message(embed=embed, view=self)
-        else:
-            await interaction.response.edit_message(embed=embed, view=self)
-
-    async def next_step(self, interaction: Interaction):
-        try:
-            menu_embed = Embed(
-                title="📜 Menu - You've been seated!",
-                description=f"Your waiter **{self.waiter_name}** has seated you at a table.\nPlease select a dish from our delicious options:",
-                color=discord.Color.green()
-            )
-            menu_embed.add_field(
-                name="Available Dishes",
-                value="🍝 Spaghetti - Classic Italian pasta\n🍔 Burger - Juicy beef burger\n🍣 Sushi - Fresh Japanese sushi",
-                inline=False
-            )
-            
-            if self.waiter_image:
-                try:
-                    file = discord.File(self.waiter_image, filename="waiter.png")
-                    menu_embed.set_thumbnail(url="attachment://waiter.png")
-                except Exception as e:
-                    logger.warning(f"Failed to prepare waiter image: {e}")
-                    file = None
-            else:
-                file = None
-            
-            view = RestaurantViewStep2(self.user_id)
-            
-            if file:
-                await interaction.response.edit_message(embed=menu_embed, view=view, attachments=[file])
-            else:
-                await interaction.response.edit_message(embed=menu_embed, view=view)
-            
-        except Exception as e:
-            logger.error(f"Error in next_step: {e}")
-            try:
-                error_embed = Embed(
-                    title="❌ Service Error",
-                    description="Something went wrong while seating you. Please try the command again!",
-                    color=discord.Color.red()
-                )
-                
-                if not interaction.response.is_done():
-                    await interaction.response.edit_message(embed=error_embed, view=None)
-                else:
-                    await interaction.followup.edit_message(interaction.message.id, embed=error_embed, view=None)
-                
-                bot.active_restaurants.pop(self.user_id, None)
-            except Exception as cleanup_error:
-                logger.error(f"Error during cleanup: {cleanup_error}")
-
-class RestaurantViewStep2(ui.View):
-    def __init__(self, user_id: int):
-        super().__init__(timeout=300)
-        self.user_id = user_id
-        self.add_item(RestaurantDropdown(user_id))
-    
-    async def on_timeout(self):
-        try:
-            bot.active_restaurants.pop(self.user_id, None)
-            logger.info(f"Restaurant session timed out for user {self.user_id}")
-        except Exception as e:
-            logger.error(f"Error handling timeout: {e}")
-
-class RestaurantDropdown(ui.Select):
-    def __init__(self, user_id: int):
-        self.user_id = user_id
-        options = [
-            discord.SelectOption(
-                label="Spaghetti", 
-                value="spaghetti", 
-                emoji="🍝",
-                description="Classic Italian pasta with marinara sauce"
-            ),
-            discord.SelectOption(
-                label="Burger", 
-                value="burger", 
-                emoji="🍔",
-                description="Juicy beef burger with all the fixings"
-            ),
-            discord.SelectOption(
-                label="Sushi", 
-                value="sushi", 
-                emoji="🍣",
-                description="Fresh Japanese sushi rolls"
-            )
-        ]
-        super().__init__(placeholder="Choose your dish...", options=options)
-
-    async def callback(self, interaction: Interaction):
-        if interaction.user.id != self.user_id:
-            return await interaction.response.send_message("This isn't your session!", ephemeral=True)
-        
-        try:
-            food = self.values[0]
-            food_emojis = {"spaghetti": "🍝", "burger": "🍔", "sushi": "🍣"}
-            
-            wait_time = random.randint(60, 240)
-            wait_minutes = wait_time // 60
-            wait_seconds = wait_time % 60
-            
-            if wait_minutes > 0 and wait_seconds > 0:
-                time_str = f"{wait_minutes} minute{'s' if wait_minutes != 1 else ''} and {wait_seconds} second{'s' if wait_seconds != 1 else ''}"
-            elif wait_minutes > 0:
-                time_str = f"{wait_minutes} minute{'s' if wait_minutes != 1 else ''}"
-            else:
-                time_str = f"{wait_seconds} second{'s' if wait_seconds != 1 else ''}"
-            
-            await interaction.response.send_message(embed=Embed(
-                title="⏳ Please wait...",
-                description=f"Your {food_emojis.get(food, '🍽️')} {food} is being prepared by our talented kitchen staff...\n\n*Estimated prep time: {time_str}*",
-                color=discord.Color.orange()
-            ))
-            
-            async def deliver_food():
-                try:
-                    await asyncio.sleep(wait_time)
-                    
-                    food_embed = Embed(
-                        title="✅ Enjoy your meal!",
-                        description=f"Here's your delicious **{food_emojis.get(food, '🍽️')} {food}**!\n\nBon appétit! Thanks for dining at Femboy Hooters!",
-                        color=discord.Color.green()
-                    )
-                    
-                    await interaction.channel.send(f"{interaction.user.mention}", embed=food_embed)
-                    bot.active_restaurants.pop(interaction.user.id, None)
-                    logger.info(f"Food delivered to user {interaction.user.id} after {wait_time} seconds")
-                    
-                except Exception as e:
-                    logger.error(f"Error delivering food to user {interaction.user.id}: {e}")
-                    bot.active_restaurants.pop(interaction.user.id, None)
-            
-            bot.loop.create_task(deliver_food())
-            
-        except Exception as e:
-            logger.error(f"Error in dropdown callback: {e}")
-            try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "❌ Sorry, there was an issue with your order. Please try again!",
-                        ephemeral=True
-                    )
-                else:
-                    await interaction.followup.send(
-                        "❌ Sorry, there was an issue with your order. Please try again!",
-                        ephemeral=True
-                    )
-                bot.active_restaurants.pop(self.user_id, None)
-            except Exception as cleanup_error:
-                logger.error(f"Error during dropdown cleanup: {cleanup_error}")
 
 def create_help_embed() -> Embed:
     """Create the help command embed."""
@@ -430,11 +230,13 @@ def create_help_embed() -> Embed:
     embed.set_footer(text="Use slash commands by typing / followed by the command name")
     return embed
 
+# --- Bot Events ---
 @bot.event
 async def on_ready():
     """Bot startup event."""
     logger.info(f"Bot logged in as {bot.user} (ID: {bot.user.id})")
     
+    # Sync slash commands
     if GUILD_ID:
         try:
             guild = discord.Object(id=GUILD_ID)
@@ -452,15 +254,19 @@ async def on_ready():
 @bot.event
 async def on_message(message: discord.Message):
     """Handle incoming messages for automod."""
+    # Ignore bot messages
     if message.author.bot:
         return
     
+    # Don't process slash commands or app commands
     if message.content.startswith('/'):
         return
     
+    # Check for forbidden content
     if bot.has_forbidden_content(message.content):
         await AutoModerator.handle_violation(message)
     
+    # Process prefix commands (if any)
     await bot.process_commands(message)
 
 @bot.event
@@ -468,6 +274,7 @@ async def on_command_error(ctx, error):
     """Handle command errors."""
     logger.error(f"Command error in {ctx.command}: {error}")
 
+# --- Slash Commands ---
 @bot.tree.command(
     name="help",
     description="Show available bot commands",
@@ -508,6 +315,7 @@ async def echo_command(
         "channel": channel.name if channel else "current"
     }
     
+    # Check permissions
     if not interaction.user.guild_permissions.manage_messages:
         embed = Embed(
             title="❌ Permission Denied",
@@ -520,9 +328,12 @@ async def echo_command(
         )
         return
     
+
+    
     try:
         target_channel = channel or interaction.channel
         
+        # Respond to interaction first
         embed = Embed(
             title="✅ Message Sent",
             description=f"Your message has been sent to {target_channel.mention}",
@@ -530,6 +341,7 @@ async def echo_command(
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         
+        # Then send the actual message
         await target_channel.send(message)
         
         await CommandLogger.log_command(
@@ -544,6 +356,7 @@ async def echo_command(
             color=discord.Color.red()
         )
         
+        # Check if we haven't responded to the interaction yet
         if not interaction.response.is_done():
             await interaction.response.send_message(embed=embed, ephemeral=True)
         else:
@@ -552,75 +365,6 @@ async def echo_command(
         await CommandLogger.log_command(
             interaction.user, "echo", params, False, True, error_msg
         )
-
-@bot.tree.command(
-    name="femboy-hooters", 
-    description="I hate myself",
-    guild=None  # This makes it only available in DMs
-)
-async def restaurant(interaction: Interaction):
-    """Interactive restaurant experience command."""
-    if interaction.guild is not None:
-        return await interaction.response.send_message(
-            "This command can only be used in DMs with the bot.",
-            ephemeral=True
-        )
-    
-    user_id = interaction.user.id
-    
-    if user_id in bot.active_restaurants:
-        embed = Embed(
-            title="❌ Active Session",
-            description="You are already at femboy hooters!",
-            color=discord.Color.red()
-        )
-        return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    try:
-        bot.active_restaurants[user_id] = True
-        view = RestaurantViewStep1(user_id)
-        
-        embed = Embed(
-            title="👋 Welcome to Femboy Hooters!",
-            description=f"Your waiter **{view.waiter_name}** is ready to serve you!\nWould you like to be seated or request a different waiter?",
-            color=discord.Color.blurple()
-        )
-        
-        if view.waiter_image:
-            try:
-                file = discord.File(view.waiter_image, filename="waiter.png")
-                embed.set_thumbnail(url="attachment://waiter.png")
-                await interaction.response.send_message(
-                    embed=embed, 
-                    view=view, 
-                    file=file
-                )
-            except Exception as e:
-                logger.warning(f"Failed to attach waiter image: {e}")
-                await interaction.response.send_message(
-                    embed=embed, 
-                    view=view
-                )
-        else:
-            await interaction.response.send_message(
-                embed=embed, 
-                view=view
-            )
-        
-    except Exception as e:
-        logger.error(f"Femboy-hooters command failed: {e}")
-        bot.active_restaurants.pop(user_id, None)
-        
-        embed = Embed(
-            title="❌ Restaurant Unavailable",
-            description="Sorry, Femboy Hooters doesn't have any seating available right now. Please come back again later.",
-            color=discord.Color.red()
-        )
-        
-        if not interaction.response.is_done():
-            await interaction.response.send_message(embed=embed)
-        else:
-            await interaction.followup.send(embed=embed)
 
 def start_web_server():
     """Start the web server in a separate thread."""
@@ -632,10 +376,12 @@ def start_web_server():
 
 def main():
     """Main function to start the bot and web server."""
+    # Start web server in background thread
     web_thread = threading.Thread(target=start_web_server, daemon=True)
     web_thread.start()
     logger.info("Web server thread started")
     
+    # Start the bot
     try:
         bot.run(TOKEN)
     except Exception as e:
