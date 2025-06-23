@@ -231,7 +231,7 @@ def create_help_embed() -> Embed:
     )
     embed.add_field(
         name="/officer-echo",
-        value="Display this help message",
+        value="Make an officer (webhook) send a message\n*Requires: Manage Messages permission*",
         inline=False
     )
     
@@ -365,6 +365,91 @@ async def echo_command(
         await CommandLogger.log_command(
             interaction.user, "echo", params, False, True, error_msg
         )
+
+# Map officer names to webhook IDs
+OFFICER_WEBHOOKS = {
+    "Boykisser - gay general": "N/A",
+    "Boykisser - boykisser-3": "",
+    "Boykisser - furry's talking corner": "N/A",
+}
+
+@bot.tree.command(
+    name="officer-echo",
+    description="Send a message as an officer (via webhook)",
+    guild=discord.Object(id=GUILD_ID) if GUILD_ID else None
+)
+@app_commands.describe(
+    officer="The officer identity to use (via webhook)",
+    message="The message content to send"
+)
+@app_commands.choices(
+    officer=[
+        app_commands.Choice(name=name, value=name)
+        for name in OFFICER_WEBHOOKS.keys()
+    ]
+)
+async def officer_echo_command(
+    interaction: Interaction,
+    officer: app_commands.Choice[str],
+    message: str
+):
+    params = {
+        "officer": officer.name,
+        "message": message
+    }
+
+    if not interaction.user.guild_permissions.manage_messages:
+        embed = Embed(
+            title="❌ Permission Denied",
+            description="You need the **Manage Messages** permission to use this command.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await CommandLogger.log_command(
+            interaction.user, "officer-echo", params, False, True, "Insufficient permissions"
+        )
+        return
+
+    webhook_id = OFFICER_WEBHOOKS.get(officer.name)
+    if not webhook_id:
+        embed = Embed(
+            title="❌ Invalid Officer",
+            description=f"No webhook configured for `{officer.name}`.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await CommandLogger.log_command(
+            interaction.user, "officer-echo", params, False, True, "Invalid officer"
+        )
+        return
+
+    try:
+        webhook = await bot.fetch_webhook(int(webhook_id))
+        await webhook.send(content=message)
+
+        embed = Embed(
+            title="✅ Officer Message Sent",
+            description=f"Message sent as **{officer.name}**",
+            color=discord.Color.green()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        await CommandLogger.log_command(
+            interaction.user, "officer-echo", params, True, True
+        )
+
+    except discord.HTTPException as e:
+        error_msg = f"Failed to send message via webhook: {str(e)}"
+        embed = Embed(
+            title="❌ Send Failed",
+            description="An error occurred while sending the message.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await CommandLogger.log_command(
+            interaction.user, "officer-echo", params, False, True, error_msg
+        )
+
 
 def start_web_server():
     """Start the web server in a separate thread."""
