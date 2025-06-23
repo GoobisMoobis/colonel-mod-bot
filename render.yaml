@@ -16,3 +16,9 @@ services:
         sync: false
       - key: GUILD_ID
         sync: false
+      - key: BOYKISSER_OFFICER_GAYGENERAL
+        sync: false
+      - key: BOYKISSER_OFFICER_BOYKISSER3
+        sync: false
+      - key: BOYKISSER_OFFICER_FURRYSTALKINGCORNER
+        sync: false
