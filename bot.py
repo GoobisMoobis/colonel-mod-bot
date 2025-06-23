@@ -33,7 +33,6 @@ class ModeratedBot(commands.Bot):
     
     def __init__(self):
         super().__init__(
-            command_prefix="!",
             intents=intents,
             application_id=APPLICATION_ID
         )
@@ -230,6 +229,11 @@ def create_help_embed() -> Embed:
         value="Display this help message",
         inline=False
     )
+    embed.add_field(
+        name="/officer-echo",
+        value="Display this help message",
+        inline=False
+    )
     
     embed.set_footer(text="Use slash commands by typing / followed by the command name")
     return embed
@@ -269,14 +273,6 @@ async def on_message(message: discord.Message):
     # Check for forbidden content
     if bot.has_forbidden_content(message.content):
         await AutoModerator.handle_violation(message)
-    
-    # Process prefix commands (if any)
-    await bot.process_commands(message)
-
-@bot.event
-async def on_command_error(ctx, error):
-    """Handle command errors."""
-    logger.error(f"Command error in {ctx.command}: {error}")
 
 # --- Slash Commands ---
 @bot.tree.command(
