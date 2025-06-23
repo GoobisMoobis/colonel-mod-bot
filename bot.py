@@ -5,9 +5,10 @@ import logging
 from typing import Optional, List
 import discord
 from discord.ext import commands
-from discord import app_commands, Interaction, Embed
+from discord import app_commands, Interaction, Embed, Webhook
 import web  # FastAPI web server file
 from datetime import timedelta, datetime
+import aiohttp
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -411,7 +412,6 @@ async def officer_echo_command(
         )
         return
 
-    # Get webhook URL from environment
     env_key = OFFICER_ENV_KEYS.get(officer.name)
     webhook_url = os.getenv(env_key)
 
@@ -428,8 +428,9 @@ async def officer_echo_command(
         return
 
     try:
-        webhook = discord.Webhook.from_url(webhook_url, client=bot.http)
-        await webhook.send(content=message)
+        async with aiohttp.ClientSession() as session:
+            webhook = Webhook.from_url(webhook_url, session=session)
+            await webhook.send(content=message)
 
         embed = Embed(
             title="✅ Officer Message Sent",
@@ -453,7 +454,6 @@ async def officer_echo_command(
         await CommandLogger.log_command(
             interaction.user, "officer-echo", params, False, True, error_msg
         )
-
 
 def start_web_server():
     """Start the web server in a separate thread."""
