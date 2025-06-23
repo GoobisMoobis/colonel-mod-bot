@@ -33,6 +33,7 @@ class ModeratedBot(commands.Bot):
     
     def __init__(self):
         super().__init__(
+            command_prefix="/",
             intents=intents,
             application_id=APPLICATION_ID
         )
