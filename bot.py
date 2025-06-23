@@ -45,7 +45,11 @@ class ModeratedBot(commands.Bot):
             # N slur
             r"n[\W_]*[i1l!|][\W_]*[gq9][\W_]*[gq9][\W_]*[e3a@r4][\W_]*[r4]?",
             # R slur
-            r"r[\W_]*[e3][\W_]*[t7][\W_]*[a@][\W_]*[r4][\W_]*[d]+(?:[\W_]*[e3][\W_]*[d])?"
+            r"r[\W_]*[e3][\W_]*[t7][\W_]*[a@][\W_]*[r4][\W_]*[d]+(?:[\W_]*[e3][\W_]*[d])?",
+            # F Slur
+            r"f[\W_]*[a@4][\W_]*[gq69]{2,}[\W_]*[o0][\W_]*[t+]+",
+            # T Slur
+            r"t[\W_]*[r][\W_]*[a@4][\W_]*[n]+[\W_]*[n]+[\W_]*[yi3e]+"
         ]
         self.regex_patterns = [
             re.compile(pattern, re.IGNORECASE) 
