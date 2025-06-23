@@ -366,11 +366,11 @@ async def echo_command(
             interaction.user, "echo", params, False, True, error_msg
         )
 
-# Map officer names to webhook IDs
-OFFICER_WEBHOOKS = {
-    "Boykisser - gay general": "N/A",
-    "Boykisser - boykisser-3": "",
-    "Boykisser - furry's talking corner": "N/A",
+# Map officer names to their corresponding Render env variable names
+OFFICER_ENV_KEYS = {
+    "Boykisser - Gay General": "BOYKISSER_OFFICER_GAYGENERAL",
+    "Boykisser - Boykisser-3": "BOYKISSER_OFFICER_BOYKISSER3",
+    "Boykisser - Furry's Talking Corner": "BOYKISSER_OFFICER_FURRYSTALKINGCORNER",
 }
 
 @bot.tree.command(
@@ -385,7 +385,7 @@ OFFICER_WEBHOOKS = {
 @app_commands.choices(
     officer=[
         app_commands.Choice(name=name, value=name)
-        for name in OFFICER_WEBHOOKS.keys()
+        for name in OFFICER_ENV_KEYS.keys()
     ]
 )
 async def officer_echo_command(
@@ -410,21 +410,24 @@ async def officer_echo_command(
         )
         return
 
-    webhook_id = OFFICER_WEBHOOKS.get(officer.name)
-    if not webhook_id:
+    # Get webhook URL from environment
+    env_key = OFFICER_ENV_KEYS.get(officer.name)
+    webhook_url = os.getenv(env_key)
+
+    if not webhook_url:
         embed = Embed(
-            title="❌ Invalid Officer",
-            description=f"No webhook configured for `{officer.name}`.",
+            title="❌ Webhook Missing",
+            description=f"Environment variable `{env_key}` not set.",
             color=discord.Color.red()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
         await CommandLogger.log_command(
-            interaction.user, "officer-echo", params, False, True, "Invalid officer"
+            interaction.user, "officer-echo", params, False, True, f"Missing env var: {env_key}"
         )
         return
 
     try:
-        webhook = await bot.fetch_webhook(int(webhook_id))
+        webhook = discord.Webhook.from_url(webhook_url, client=bot.http)
         await webhook.send(content=message)
 
         embed = Embed(
