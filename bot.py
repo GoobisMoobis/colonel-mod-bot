@@ -450,10 +450,15 @@ async def officer_echo_command(
             description="An error occurred while sending the message.",
             color=discord.Color.red()
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        if not interaction.response.is_done():
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
         await CommandLogger.log_command(
             interaction.user, "officer-echo", params, False, True, error_msg
         )
+
 
 def start_web_server():
     """Start the web server in a separate thread."""
